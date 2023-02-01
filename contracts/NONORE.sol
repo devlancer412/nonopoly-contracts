@@ -5,13 +5,15 @@ pragma solidity ^0.8.0;
 import "./utils/RegisterableNFT.sol";
 
 /**
- * @title Nonopoly Houses NFT
+ * @title Nonopoly Real Estate NFT
  */
-contract NonopolyHouses is RegisterableNFT {
+contract NonopolyRealEstate is RegisterableNFT {
   /**
    * @param nonopoly Nonopoly game contract address
    */
-  constructor(address nonopoly) RegisterableNFT("Nonopoly City", "NONOC", 1, 5000, nonopoly) {}
+  constructor(
+    address nonopoly
+  ) RegisterableNFT("Nonopoly Real Estate", "NONORE", 1, 5000, nonopoly) {}
 
   function _mintPlayer() external {
     _mint(msg.sender, 1);
