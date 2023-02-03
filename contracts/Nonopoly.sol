@@ -3,6 +3,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "erc721a/contracts/IERC721A.sol";
 import "./interfaces/IRegisterableNFT.sol";
 
@@ -10,6 +11,8 @@ import "./interfaces/IRegisterableNFT.sol";
  * @title Nonopol game contract
  */
 contract Nonopoly is Ownable {
+  using SafeERC20 for IERC20;
+
   enum PlayerType {
     Rookie,
     Intermediate,
@@ -53,6 +56,7 @@ contract Nonopoly is Ownable {
   struct PlayerData {
     uint256 timestamp;
     uint256 tokenAmount;
+    uint8 currentBoard;
     PlayerType playerType;
   }
 
@@ -81,6 +85,9 @@ contract Nonopoly is Ownable {
   event RegisteredPlayer(uint256 tokenId, uint256 playerType);
   event RegisteredStreet(uint256 tokenId, uint256 boardId);
   event RegisteredRealEstate(uint256 tokenId, uint256 estateType);
+  event RemovedPlayer(uint256 tokenId);
+  event RemovedStreet(uint256 tokenId);
+  event RemovedRealEstate(uint256 tokenId);
 
   modifier afterInitialized() {
     require(
@@ -266,10 +273,10 @@ contract Nonopoly is Ownable {
     Sig calldata sig
   ) public afterInitialized {
     require(IERC721A(player).ownerOf(tokenId) == msg.sender, "Nonopoly: invalid owner");
-    require(_validateSig(player, tokenId, playerType, sig), "Nonopoly: Invalid signature");
-    require(playerData[tokenId].timestamp == 0, "Nonopoly: Already registered");
+    require(_validateSig(player, tokenId, playerType, sig), "Nonopoly: invalid signature");
+    require(playerData[tokenId].timestamp == 0, "Nonopoly: already registered");
 
-    playerData[tokenId] = PlayerData(block.timestamp, 0, PlayerType(playerType));
+    playerData[tokenId] = PlayerData(block.timestamp, 0, 0, PlayerType(playerType));
     IRegisterableNFT(player).register(tokenId);
 
     emit RegisteredPlayer(tokenId, playerType);
@@ -289,8 +296,8 @@ contract Nonopoly is Ownable {
     Sig calldata sig
   ) public afterInitialized {
     require(IERC721A(street).ownerOf(tokenId) == msg.sender, "Nonopoly: invalid owner");
-    require(_validateSig(player, tokenId, boardId, sig), "Nonopoly: Invalid signature");
-    require(streetPlayer[tokenId] == 0, "Nonopoly: Already registered");
+    require(_validateSig(player, tokenId, boardId, sig), "Nonopoly: invalid signature");
+    require(streetPlayer[tokenId] == 0, "Nonopoly: already registered");
     require(playerData[playerId].timestamp == 0, "Nonopoly: invalid player owner");
     require(boards[uint8(boardId)].boardType == BoardType.Street, "Nonopoly: invalid board id");
 
@@ -313,11 +320,41 @@ contract Nonopoly is Ownable {
     Sig calldata sig
   ) public afterInitialized {
     require(IERC721A(realEstate).ownerOf(tokenId) == msg.sender, "Nonopoly: invalid owner");
-    require(_validateSig(player, tokenId, estateType, sig), "Nonopoly: Invalid signature");
+    require(_validateSig(player, tokenId, estateType, sig), "Nonopoly: invalid signature");
 
     realEstateType[tokenId] = RealEstateType(estateType);
     IRegisterableNFT(realEstate).register(tokenId);
 
     emit RegisteredRealEstate(tokenId, estateType);
+  }
+
+  /**
+   * @dev remove player from nonopoly contract
+   * @param tokenId id of nft
+   */
+  function removePlayer(uint256 tokenId) public afterInitialized {
+    require(IERC721A(player).ownerOf(tokenId) == msg.sender, "Nonopoly: invalid owner");
+    require(playerData[tokenId].timestamp > 0, "Nonopoly: not registered");
+
+    uint256 remainingAmount = playerData[tokenId].tokenAmount;
+    playerData[tokenId].timestamp = 0;
+    playerData[tokenId].tokenAmount = 0;
+
+    IERC20(nerd).transfer(msg.sender, remainingAmount);
+    IRegisterableNFT(player).remove(tokenId);
+
+    emit RemovedPlayer(tokenId);
+  }
+
+  /**
+   * @dev remove real estate to nonopoly contract
+   * @param tokenId id of nft
+   */
+  function removeRealEstate(uint256 tokenId) public afterInitialized {
+    require(IERC721A(realEstate).ownerOf(tokenId) == msg.sender, "Nonopoly: invalid owner");
+
+    IRegisterableNFT(realEstate).remove(tokenId);
+
+    emit RemovedRealEstate(tokenId);
   }
 }
