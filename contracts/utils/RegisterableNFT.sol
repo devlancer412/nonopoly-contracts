@@ -57,4 +57,21 @@ contract RegisterableNFT is IRegisterableNFT, ERC721A {
   function remove(uint256 id) external onlyNonopoly {
     registered[id] = false;
   }
+
+  /**
+   * @dev prevent transfer function about registered nft
+   */
+  function _beforeTokenTransfers(
+    address from,
+    address to,
+    uint256 startTokenId,
+    uint256 quantity
+  ) internal virtual override {
+    for (uint256 i = 0; i < quantity; i++) {
+      require(
+        registered[startTokenId + i] == false,
+        "RegisterableNFT: can't transfer registered token"
+      );
+    }
+  }
 }

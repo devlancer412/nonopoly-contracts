@@ -3,6 +3,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "erc721a/contracts/IERC721A.sol";
 import "./interfaces/IRegisterableNFT.sol";
 
 /**
@@ -43,6 +44,12 @@ contract Nonopoly is Ownable {
     Blue
   }
 
+  struct Sig {
+    bytes32 r;
+    bytes32 s;
+    uint8 v;
+  }
+
   struct PlayerData {
     uint256 timestamp;
     uint256 tokenAmount;
@@ -55,6 +62,8 @@ contract Nonopoly is Ownable {
     uint256[] streets;
   }
 
+  address public immutable signer;
+
   address public player;
   address public street;
   address public realEstate;
@@ -62,9 +71,16 @@ contract Nonopoly is Ownable {
 
   mapping(uint8 => BoardData) public boards;
   // streetId => playerId
-  mapping(uint256 => uint256) public playerStreets;
+  mapping(uint256 => uint256) public streetPlayer;
+  // playerId => PlayerData
+  mapping(uint256 => PlayerData) public playerData;
+  // realEstateId => realEstateType
+  mapping(uint256 => RealEstateType) public realEstateType;
 
   event Inititalized(address _player, address _street, address _realEstate);
+  event RegisteredPlayer(uint256 tokenId, uint256 playerType);
+  event RegisteredStreet(uint256 tokenId, uint256 boardId);
+  event RegisteredRealEstate(uint256 tokenId, uint256 estateType);
 
   modifier afterInitialized() {
     require(
@@ -77,8 +93,9 @@ contract Nonopoly is Ownable {
   /**
    * @param _nerd NERD token contract address
    */
-  constructor(address _nerd) {
+  constructor(address _nerd, address _signer) {
     nerd = _nerd;
+    signer = _signer;
 
     // init board datas
     boards[0] = _createBoard(BoardType.Start, StreetColor.None);
@@ -215,5 +232,92 @@ contract Nonopoly is Ownable {
 
     streets = board.streets;
     multiplyer = _getStreetMultiplyer(board.color);
+  }
+
+  /**
+   * @dev validate signature
+   */
+  function _validateSig(
+    address nftAddress,
+    uint256 tokenId,
+    uint256 additionalValue,
+    Sig calldata sig
+  ) private view returns (bool) {
+    bytes32 messageHash = keccak256(
+      abi.encodePacked(msg.sender, nftAddress, tokenId, additionalValue)
+    );
+
+    bytes32 ethSignedMessageHash = keccak256(
+      abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
+    );
+
+    return signer == ecrecover(ethSignedMessageHash, sig.v, sig.r, sig.s);
+  }
+
+  /**
+   * @dev register player to nonopoly contract
+   * @param tokenId id of nft
+   * @param playerType type of player
+   * @param sig backend signature
+   */
+  function registerPlayer(
+    uint256 tokenId,
+    uint256 playerType,
+    Sig calldata sig
+  ) public afterInitialized {
+    require(IERC721A(player).ownerOf(tokenId) == msg.sender, "Nonopoly: invalid owner");
+    require(_validateSig(player, tokenId, playerType, sig), "Nonopoly: Invalid signature");
+    require(playerData[tokenId].timestamp == 0, "Nonopoly: Already registered");
+
+    playerData[tokenId] = PlayerData(block.timestamp, 0, PlayerType(playerType));
+    IRegisterableNFT(player).register(tokenId);
+
+    emit RegisteredPlayer(tokenId, playerType);
+  }
+
+  /**
+   * @dev register street to nonopoly contract
+   * @param tokenId id of nft
+   * @param boardId id of board
+   * @param playerId id of linked player
+   * @param sig backend signature
+   */
+  function registerStreet(
+    uint256 tokenId,
+    uint256 boardId,
+    uint256 playerId,
+    Sig calldata sig
+  ) public afterInitialized {
+    require(IERC721A(street).ownerOf(tokenId) == msg.sender, "Nonopoly: invalid owner");
+    require(_validateSig(player, tokenId, boardId, sig), "Nonopoly: Invalid signature");
+    require(streetPlayer[tokenId] == 0, "Nonopoly: Already registered");
+    require(playerData[playerId].timestamp == 0, "Nonopoly: invalid player owner");
+    require(boards[uint8(boardId)].boardType == BoardType.Street, "Nonopoly: invalid board id");
+
+    streetPlayer[tokenId] = playerId;
+    boards[uint8(boardId)].streets.push(tokenId);
+    IRegisterableNFT(street).register(tokenId);
+
+    emit RegisteredStreet(tokenId, boardId);
+  }
+
+  /**
+   * @dev register real estate to nonopoly contract
+   * @param tokenId id of nft
+   * @param estateType type of player
+   * @param sig backend signature
+   */
+  function registerRealEstate(
+    uint256 tokenId,
+    uint256 estateType,
+    Sig calldata sig
+  ) public afterInitialized {
+    require(IERC721A(realEstate).ownerOf(tokenId) == msg.sender, "Nonopoly: invalid owner");
+    require(_validateSig(player, tokenId, estateType, sig), "Nonopoly: Invalid signature");
+
+    realEstateType[tokenId] = RealEstateType(estateType);
+    IRegisterableNFT(realEstate).register(tokenId);
+
+    emit RegisteredRealEstate(tokenId, estateType);
   }
 }
